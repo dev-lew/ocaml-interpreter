@@ -7,6 +7,15 @@ let explode s =
 let implode ls =
   String.of_seq (List.to_seq ls)
 
+type 'a parser = char list -> ('a * char list) option
+
+let (>>=) : 'a parser -> ('a -> 'b parser) -> 'b parser =
+  fun pa ->
+  fun f ->
+  fun ls -> match pa ls with
+      None -> None
+    |
+      Some (a, rest) -> f a rest
 
 
 let interpreter (s : string) : string list * int = failwith "undefined"
