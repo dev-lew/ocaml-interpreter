@@ -42,12 +42,20 @@ let rec many (p : 'a parser) : ('a list) parser =
       Some (xs, ls) -> Some (x :: xs, ls)
   end
 
+(* Does not consume the input string
+   Returns c *)
+let return (a: 'a) : 'a parser =
+  fun c -> Some (c, a)
+
 (* Parses the first character of the input *)
-let read : char parser =
+let read_char : char parser =
   fun ls ->
   match ls with
   | x :: ls -> Some (x, ls)
   | _ -> None
+
+
+
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
