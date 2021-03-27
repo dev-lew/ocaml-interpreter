@@ -9,6 +9,13 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
+let (<|>) (p1 : 'a parser) (p2 : 'a parser) : 'a parser =
+    fun ls ->
+      match p1 ls with
+        None -> p2 ls
+      |
+        Some (x, rest) -> Some (x, rest)
+
 let (>>=) : 'a parser -> ('a -> 'b parser) -> 'b parser =
   fun pa ->
   fun f ->
