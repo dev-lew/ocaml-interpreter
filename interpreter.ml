@@ -9,6 +9,8 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
+(* Disjunction operator: attempts to parse with p1, and
+   if it fails, parse using p2 *)
 let (<|>) (p1 : 'a parser) (p2 : 'a parser) : 'a parser =
     fun ls ->
       match p1 ls with
@@ -16,6 +18,8 @@ let (<|>) (p1 : 'a parser) (p2 : 'a parser) : 'a parser =
       |
         Some (x, rest) -> Some (x, rest)
 
+(* Bind operator: combine the results of pa and pb with
+   the function f *)
 let (>>=) : 'a parser -> ('a -> 'b parser) -> 'b parser =
   fun pa ->
   fun f ->
@@ -24,6 +28,19 @@ let (>>=) : 'a parser -> ('a -> 'b parser) -> 'b parser =
     |
       Some (a, rest) -> f a rest
 
+(* Applies p zero or more times until it fails
+   Returns a list of each result of p on ls *)
+let rec many (p : 'a parser) : ('a list) parser =
+  fun ls ->
+  match p ls with
+    None -> Some ([], ls)
+  |
+    Some (x, ls) -> begin
+    match many p ls with
+      None -> Some (x :: [], ls)
+    |
+      Some (xs, ls) -> Some (x :: xs, ls)
+  end
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
