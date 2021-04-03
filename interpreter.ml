@@ -9,6 +9,10 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
+(* Grammar Definitions *)
+type digit = int
+type letter = char
+
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
 let (<|>) (p1 : 'a parser) (p2 : 'a parser) : 'a parser =
@@ -111,6 +115,10 @@ let clistp : char list -> char list parser =
 let sats (str : string) : string parser =
   clistp (explode str) >>= fun x -> return (implode x)
 
+(* Parses whitespace *)
+let wsp : char parser =
+  satc ' ' <|> satc '\n' <|> satc '\t' <|> satc '\r'
+
 (* Parses a digit represented as a character *)
 let digitp : char parser =
   charp >>= fun x ->
@@ -118,16 +126,20 @@ let digitp : char parser =
   then return x
   else zero
 
-(* Parses an integer *)
-let intp : int parser =
-  begin
+(* Parses natural numbers *)
+let nat : int parser =
+  many1 digitp >>= fun x ->
+  return (int_of_string (implode x))
+
+(* Parses negative numbers *)
+let neg : int parser =
   satc '-' >>= fun _ ->
   many1 digitp >>= fun x ->
   return (-1 * (int_of_string (implode x)))
-end <|> begin
-  many1 digitp >>= fun x ->
-  return (int_of_string (implode x))
-end
+
+(* Parses an integer *)
+let intp : int parser =
+  nat <|> neg
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
