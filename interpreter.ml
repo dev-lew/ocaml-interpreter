@@ -9,9 +9,6 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
-(* Grammar Definitions *)
-type digit = int
-type letter = char
 
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
@@ -129,6 +126,21 @@ let digitp : char parser =
   then return x
   else zero
 
+(* Parses a letter, defined in the grammar as a-z | A-Z *)
+let letterp : char parser =
+  charp >>= fun x ->
+  if ('a' <= x && x <= 'z') || ('A' <= x && x <= 'Z')
+  then return x
+  else zero
+
+(* Parses a bool *)
+let boolp : bool parser =
+  (sats "true" >>= fun _ ->
+  return true)
+  <|>
+  (sats "false" >>= fun _ ->
+  return false)
+
 (* Parses natural numbers *)
 let nat : int parser =
   many1 digitp >>= fun x ->
@@ -143,6 +155,8 @@ let neg : int parser =
 (* Parses an integer *)
 let intp : int parser =
   nat <|> neg
+
+
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
