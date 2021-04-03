@@ -72,6 +72,8 @@ let sat (f: char -> bool) : char parser =
 let satc (c: char) : char parser =
   sat (fun x -> if x = c then true else false)
 
+(* Takes a string and parses that string, fail otherwise if it's not in
+   the input *)
 let sats (str: string) : str parser =
   if str = "" then zero else
     let rec aux ls =
