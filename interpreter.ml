@@ -47,8 +47,13 @@ let rec many (p : 'a parser) : ('a list) parser =
 let return (a: 'a) : 'a parser =
   fun ls -> Some (a, ls)
 
+(* Always fails *)
 let zero : 'a parser =
   fun _ -> None
+
+(* Run a parser *)
+let parse (p: 'a parser) (str: string) : ('a * char list) option =
+  p (explode str)
 
 (* Parses the first character of the input *)
 let char : char parser =
@@ -57,9 +62,23 @@ let char : char parser =
   | x :: ls -> Some (x, ls)
   | _ -> None
 
-let sat (f: char -> bool) : 'a parser =
+(* Takes char predicate f and if f is true, parse the character *)
+let sat (f: char -> bool) : char parser =
   char >>= fun x ->
   if f x then return x else zero
+
+(* Takes a char, and parses that char, fail otherwise if it's not in
+   the input *)
+let satc (c: char) : char parser =
+  sat (fun x -> if x = c then true else false)
+
+let sats (str: string) : str parser =
+  if str = "" then zero else
+    let rec aux ls =
+      match ls with
+        c :: rest -> satc 'c' >>= fun _ -> aux rest
+      |
+        None -> zero 
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
