@@ -115,9 +115,12 @@ let clistp : char list -> char list parser =
 let sats (str : string) : string parser =
   clistp (explode str) >>= fun x -> return (implode x)
 
-(* Parses whitespace *)
-let wsp : char parser =
+(* Parses whitespace character *)
+let wsc : char parser =
   satc ' ' <|> satc '\n' <|> satc '\t' <|> satc '\r'
+
+(* Parses arbitrary amounts of whitespace *)
+let wsp = many1 wsc
 
 (* Parses a digit represented as a character *)
 let digitp : char parser =
