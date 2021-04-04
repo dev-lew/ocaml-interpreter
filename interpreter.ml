@@ -9,6 +9,21 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
+(* Grammar definitions
+   The grammar also supports the primitive types of
+   int, bool, and string *)
+type digit = char
+
+type letter = char
+
+type name = Name of string
+
+type const =
+  | Int of int
+  | Bool of bool
+  | String of string
+  | Name of name
+  | Unit of unit
 
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
@@ -120,14 +135,14 @@ let wsc : char parser =
 let wsp = many1 wsc
 
 (* Parses a digit represented as a character *)
-let digitp : char parser =
+let digitp : digit parser =
   charp >>= fun x ->
   if '0' <= x && x <= '9'
   then return x
   else zero
 
 (* Parses a letter, defined in the grammar as a-z | A-Z *)
-let letterp : char parser =
+let letterp : letter parser =
   charp >>= fun x ->
   if ('a' <= x && x <= 'z') || ('A' <= x && x <= 'Z')
   then return x
@@ -156,7 +171,18 @@ let neg : int parser =
 let intp : int parser =
   nat <|> neg
 
+(* Parses a unit *)
+let unitp : unit parser =
+  satc '(' >>= fun _ ->
+  satc ')' >>= fun _ ->
+  return ()
 
+(* Parses a name as defined in the grammar
+   Merlin gives warnings here but the function works ? *)
+let namep : name parser =
+  letterp >>= fun x ->
+  many (letterp <|> digitp <|> satc '_' <|> satc '`') >>= fun rest ->
+  return (Name (implode (x::rest)))
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
