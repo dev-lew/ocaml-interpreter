@@ -204,11 +204,81 @@ let unitp : const parser =
    Merlin gives warnings here but the function works ? *)
 let namep : const parser =
   letterp >>= fun x ->
-  many (letterp <|> digitp <|> satc '_' <|> satc '`') >>= fun rest ->
+  many (letterp <|> digitp <|> satc '_' <|> satc '\'') >>= fun rest ->
   return (Name (implode (x::rest)))
 
+(* Parses a const as defined in the grammar *)
 let constp : const parser =
   (intp <|> boolp <|> stringp <|> namep <|> unitp)
+
+(* Parses a Push command, ignores whitespace *)
+let pushp : command parser =
+  sats "Push" >>= fun _ ->
+  wsp >>= fun _ ->
+  intp >>= fun x ->
+  satc ';' >>= fun _ ->
+  return (Push x)
+
+(* Parses a Pop command *)
+let popp : command parser =
+  sats "Pop" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Pop
+
+(* Parses a Log command *)
+let logp : command parser =
+  sats "Log" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Log
+
+(* Parses a Swap command *)
+let swapp : command parser =
+  sats "Swap" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Swap
+
+(* Parses an Add command *)
+let addp : command parser =
+  sats "Add" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Add
+
+(* Parses a Sub  command *)
+let subp : command parser =
+  sats "Sub" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Sub
+
+(* Parses a Mul command *)
+let mulp : command parser =
+  sats "Mul" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Mul
+
+(* Parses a Div command *)
+let divp : command parser =
+  sats "Div" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Div
+
+(* Parses a Rem command *)
+let remp : command parser =
+  sats "Rem" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Rem
+
+(* Parses a Neg command *)
+let negp : command parser =
+  sats "Neg" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Neg
+
+(* Parses a no argument command *)
+let noarg : command parser =
+  popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp
+
+let commandp : command parser =
+
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
