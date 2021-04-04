@@ -102,6 +102,10 @@ let sat (f: char -> bool) : char parser =
 let satc (c: char) : char parser =
   sat (fun x -> if x = c then true else false)
 
+(* Takes a char, and parses anything but that char *)
+let nsatc (c: char) : char parser =
+  sat (fun x -> if x = c then false else true)
+
 (* Takes a char list and parses that char list, fail otherwise if it's not in
    the input *)
 let clistp : char list -> char list parser =
@@ -126,6 +130,16 @@ let clistp : char list -> char list parser =
    the input *)
 let sats (str : string) : string parser =
   clistp (explode str) >>= fun x -> return (implode x)
+
+(* Parses a string until it finds a quote *)
+let failquote : string parser =
+  many (nsatc '\"') >>= fun x ->
+  return (implode x)
+
+
+(* Parses a string as defined in the grammar *)
+let stringp : string parser =
+  satc '\"' >>= fun _ -> failquote
 
 (* Parses whitespace character *)
 let wsc : char parser =
