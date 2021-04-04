@@ -9,7 +9,7 @@ let implode ls =
 
 type 'a parser = char list -> ('a * char list) option
 
-(* Grammar definitions
+(* Grammar definition
    The grammar also supports the primitive types of
    int, bool, and string *)
 type const =
@@ -18,6 +18,18 @@ type const =
   | String of string
   | Name of string
   | Unit
+
+type command =
+  | Push of const
+  | Pop
+  | Log
+  | Swap
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Rem
+  | Neg
 
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
