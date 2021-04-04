@@ -155,7 +155,7 @@ let wsc : char parser =
   satc ' ' <|> satc '\n' <|> satc '\t' <|> satc '\r'
 
 (* Parses arbitrary amounts of whitespace *)
-let wsp = many1 wsc
+let wsp = many wsc
 
 (* Parses a digit represented as a character *)
 let digitp : char parser =
@@ -215,7 +215,7 @@ let constp : const parser =
 let pushp : command parser =
   sats "Push" >>= fun _ ->
   wsp >>= fun _ ->
-  intp >>= fun x ->
+  constp >>= fun x ->
   satc ';' >>= fun _ ->
   return (Push x)
 
@@ -277,8 +277,16 @@ let negp : command parser =
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp
 
+(* Parses a command and ignores whitespace after
+   the semicolon (helps with parsing lists of commands) *)
 let commandp : command parser =
+  (pushp <|> noarg) >>= fun x ->
+  wsp >>= fun _ ->
+  return x
 
+(* Parses a list of commands, ignoring whitespace *)
+let commandsp : command list parser =
+  many1 (commandp)
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
