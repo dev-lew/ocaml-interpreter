@@ -12,18 +12,12 @@ type 'a parser = char list -> ('a * char list) option
 (* Grammar definitions
    The grammar also supports the primitive types of
    int, bool, and string *)
-type digit = char
-
-type letter = char
-
-type name = Name of string
-
 type const =
   | Int of int
   | Bool of bool
   | String of string
-  | Name of name
-  | Unit of unit
+  | Name of string
+  | Unit
 
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
@@ -132,13 +126,13 @@ let sats (str : string) : string parser =
   clistp (explode str) >>= fun x -> return (implode x)
 
 (* Parses a string until it finds a quote *)
-let failquote : string parser =
+let failquote : const parser =
   many (nsatc '\"') >>= fun x ->
-  return (implode x)
+  return (String ((implode x)))
 
 
 (* Parses a string as defined in the grammar *)
-let stringp : string parser =
+let stringp : const parser =
   satc '\"' >>= fun _ -> failquote
 
 (* Parses whitespace character *)
@@ -149,54 +143,57 @@ let wsc : char parser =
 let wsp = many1 wsc
 
 (* Parses a digit represented as a character *)
-let digitp : digit parser =
+let digitp : char parser =
   charp >>= fun x ->
   if '0' <= x && x <= '9'
   then return x
   else zero
 
 (* Parses a letter, defined in the grammar as a-z | A-Z *)
-let letterp : letter parser =
+let letterp : char parser =
   charp >>= fun x ->
   if ('a' <= x && x <= 'z') || ('A' <= x && x <= 'Z')
   then return x
   else zero
 
 (* Parses a bool *)
-let boolp : bool parser =
+let boolp : const parser =
   (sats "true" >>= fun _ ->
-  return true)
+  return (Bool true))
   <|>
   (sats "false" >>= fun _ ->
-  return false)
+  return ( Bool false))
 
 (* Parses natural numbers *)
-let nat : int parser =
+let nat : const parser =
   many1 digitp >>= fun x ->
-  return (int_of_string (implode x))
+  return (Int ((int_of_string (implode x))))
 
 (* Parses negative numbers *)
-let neg : int parser =
+let neg : const parser =
   satc '-' >>= fun _ ->
   many1 digitp >>= fun x ->
-  return (-1 * (int_of_string (implode x)))
+  return (Int ((-1 * (int_of_string (implode x)))))
 
 (* Parses an integer *)
-let intp : int parser =
+let intp : const parser =
   nat <|> neg
 
 (* Parses a unit *)
-let unitp : unit parser =
+let unitp : const parser =
   satc '(' >>= fun _ ->
   satc ')' >>= fun _ ->
-  return ()
+  return Unit
 
 (* Parses a name as defined in the grammar
    Merlin gives warnings here but the function works ? *)
-let namep : name parser =
+let namep : const parser =
   letterp >>= fun x ->
   many (letterp <|> digitp <|> satc '_' <|> satc '`') >>= fun rest ->
   return (Name (implode (x::rest)))
+
+let constp : const parser =
+  (intp <|> boolp <|> stringp <|> namep <|> unitp)
 
 let interpreter (s : string) : string list * int = failwith "undefined"
 
