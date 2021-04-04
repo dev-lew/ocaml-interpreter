@@ -125,9 +125,12 @@ let clistp : char list -> char list parser =
 let sats (str : string) : string parser =
   clistp (explode str) >>= fun x -> return (implode x)
 
-(* Parses a string until it finds a quote *)
+(* Parses a string and stops after parsing a quote
+   Fails if there is no quote
+   Helper function for stringp *)
 let failquote : const parser =
   many (nsatc '\"') >>= fun x ->
+  satc '\"' >>= fun _ ->
   return (String ((implode x)))
 
 
