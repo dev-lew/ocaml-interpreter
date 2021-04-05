@@ -176,10 +176,10 @@ let letterp : char parser =
 
 (* Parses a bool *)
 let boolp : const parser =
-  (sats "true" >>= fun _ ->
+  (sats "<true>" >>= fun _ ->
   return (Bool true))
   <|>
-  (sats "false" >>= fun _ ->
+  (sats "<false>" >>= fun _ ->
   return ( Bool false))
 
 (* Parses natural numbers *)
@@ -199,8 +199,7 @@ let intp : const parser =
 
 (* Parses a unit *)
 let unitp : const parser =
-  satc '(' >>= fun _ ->
-  satc ')' >>= fun _ ->
+  sats "<unit>" >>= fun _ ->
   return Unit
 
 (* Parses a name as defined in the grammar
@@ -309,28 +308,141 @@ let string_of_const (inp : const) : string =
 (* Evaluates a list of commands, using configuration
    (p/s) -> (p'/s') with p being a prog and s being a stack
    Throws defined error codes 0,1,2,3
-   Returns a  *)
-let rec eval (prog : prog) (s : const list ) : (const * int) list =
+   Returns an output list * error code
+   Only a Log command may change the output list *)
+let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list * int) =
   match prog with
-    (Push v)::prog' -> eval prog' (v::s)
+    (Push v)::prog' -> eval prog' (v::s) acc
   |
     Pop::prog' -> begin
       match s with
-        [] -> [Unit, 2]
+        [] -> acc, 2
       |
-        v::[] -> [v, 2]
-      |
-        v::s' -> eval prog' s'
+        v::s' -> eval prog' s' acc
     end
   |
     Log::prog' -> begin
       match s with
-        [] -> [Unit, 2]
+        [] -> acc, 2
       |
-        v::s' ->
-      end
-let interpreter (s : string) : string list * int = failwith "undefined"
+        v::s' -> eval prog' s' ((string_of_const v)::acc)
+    end
+  |
+    Swap::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> eval prog' (v2::v1::s') acc
+    end
+  |
+    Add::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Int (x + y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Sub::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Int (x - y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Mul::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Int (x * y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Div::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> begin
+              match y with
+                0 -> acc, 3
+              |
+                _ -> eval prog' (Int (x / y)::s') acc
+              end
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Rem::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> begin
+              match y with
+                0 -> acc, 3
+              |
+                _ -> eval prog' (Int (x mod y)::s') acc
+            end
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Neg::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::s' -> begin
+          match v with
+            Int x -> eval prog' (Int (-1 * x)::s') acc
+          |
+            _ -> acc, 1
+          end
+    end
+  |
+    [] -> acc, 0
 
+(* Wrapper for evaluate
+   Takes a prog calls evaluate on it
+   A successfully parsed program returns an empty list as the second member
+   in the tuple *)
+let interpreter (s : string) : string list * int =
+  match parse commandsp s with
+    Some (commands, []) -> begin
+    match eval commands [] [] with
+        ls, err -> (List.rev ls), err
+  end
+  |
+    _ -> failwith "unimplemented"
 
 let readlines (file : string) : string =
   let fp = open_in file in
