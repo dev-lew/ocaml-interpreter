@@ -31,6 +31,9 @@ type command =
   | Rem
   | Neg
 
+type prog =
+  command list
+
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
 let (<|>) (p1 : 'a parser) (p2 : 'a parser) : 'a parser =
@@ -285,9 +288,47 @@ let commandp : command parser =
   return x
 
 (* Parses a list of commands, ignoring whitespace *)
-let commandsp : command list parser =
-  many1 (commandp)
+let commandsp : prog parser =
+  many1 commandp
 
+(* Converts const to string representations consistent with
+   the output files *)
+let string_of_const (inp : const) : string =
+  match inp with
+    Int i -> string_of_int i
+  |
+    Bool b -> "<" ^ string_of_bool b ^ ">"
+  |
+    String s -> "\"" ^ s ^ "\""
+  |
+    Name n -> n
+  |
+    Unit -> "<unit>"
+
+
+(* Evaluates a list of commands, using configuration
+   (p/s) -> (p'/s') with p being a prog and s being a stack
+   Throws defined error codes 0,1,2,3
+   Returns a  *)
+let rec eval (prog : prog) (s : const list ) : (const * int) list =
+  match prog with
+    (Push v)::prog' -> eval prog' (v::s)
+  |
+    Pop::prog' -> begin
+      match s with
+        [] -> [Unit, 2]
+      |
+        v::[] -> [v, 2]
+      |
+        v::s' -> eval prog' s'
+    end
+  |
+    Log::prog' -> begin
+      match s with
+        [] -> [Unit, 2]
+      |
+        v::s' ->
+      end
 let interpreter (s : string) : string list * int = failwith "undefined"
 
 
