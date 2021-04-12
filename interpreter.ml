@@ -1,4 +1,3 @@
-
 open Printf
 
 let explode s =
@@ -30,6 +29,20 @@ type command =
   | Div
   | Rem
   | Neg
+  | Cat
+  | And
+  | Or
+  | Not
+  | Eq
+  | Lte
+  | Lt
+  | Gte
+  | Gt
+  | Let
+  | Ask
+  (* The following commands will be enforced by parsers only:
+     Begin commands End
+     If commands Else commands End*)
 
 type prog =
   command list
