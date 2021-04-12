@@ -288,9 +288,20 @@ let negp : command parser =
   satc ';' >>= fun _ ->
   return Neg
 
+let catp : command parser =
+  sats "Cat" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Cat
+
+let addp : command parser =
+  sats "And" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return And
+
 (* Parses a no argument command *)
 let noarg : command parser =
-  popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp
+  popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
+  catp
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
@@ -316,6 +327,7 @@ let string_of_const (inp : const) : string =
     Name n -> n
   |
     Unit -> "<unit>"
+
 
 
 (* Evaluates a list of commands, using configuration
@@ -441,6 +453,34 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
             _ -> acc, 1
           end
     end
+  |
+    Cat::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            String x, String y -> eval prog' (String (y ^ x)::s') acc
+          |
+            _ -> acc, 1
+          end
+      end
+  |
+    And::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            Bool x, Bool y -> eval prog' (Bool (x && y)::s') acc
+          |
+            _ -> acc, 1
+          end
+      end
   |
     [] -> acc, 0
 
