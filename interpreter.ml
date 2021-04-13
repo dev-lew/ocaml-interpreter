@@ -293,15 +293,50 @@ let catp : command parser =
   satc ';' >>= fun _ ->
   return Cat
 
-let addp : command parser =
+let andp : command parser =
   sats "And" >>= fun _ ->
   satc ';' >>= fun _ ->
   return And
 
+let orp : command parser =
+  sats "Or" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Or
+
+let notp : command parser =
+  sats "Not" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Not
+
+let eqp : command parser =
+  sats "Eq" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Eq
+
+let ltep : command parser =
+  sats "Lte" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Lte
+
+let ltp : command parser =
+  sats "Lt" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Lt
+
+let gtep : command parser =
+  sats "Gte" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Gte
+
+let gtp : command parser =
+  sats "Gt" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Gt
+
 (* Parses a no argument command *)
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
-  catp
+  catp <|> andp <|> orp <|> notp <|> eqp <|> ltep <|> ltp <|> gtep <|> gtp
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
@@ -481,6 +516,102 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
             _ -> acc, 1
           end
       end
+  |
+    Or::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            Bool x, Bool y -> eval prog' (Bool (x || y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Not::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::s' -> begin
+          match v with
+            Bool x -> eval prog' (Bool (not x)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Eq::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Bool (x = y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Lte::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Bool (x <= y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Lt::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Bool (x < y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Gte::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Bool (x >= y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
+  |
+    Gt::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v1::v2::s' -> begin
+          match (v1, v2) with
+            (Int x, Int y) -> eval prog' (Bool (x > y)::s') acc
+          |
+            _ -> acc, 1
+        end
+    end
   |
     [] -> acc, 0
 
