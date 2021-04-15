@@ -44,8 +44,25 @@ type command =
      Begin commands End
      If commands Else commands End*)
 
+(* Program type *)
 type prog =
   command list
+
+(* Type for the memory *)
+type value =
+  | I_val of int
+  | B_val of bool
+  | S_val of string
+  | N_val of string
+  | U_val
+
+(* Simple key value based memory for Let *)
+type mem =
+  (string * value) list
+
+(* Retrieve a value by searching with key name *)
+let fetch (m : mem) (name : string) : value option =
+  List.assoc_opt name m
 
 (* Disjunction operator: attempts to parse with p1, and
    if it fails, parse using p2 *)
@@ -333,10 +350,21 @@ let gtp : command parser =
   satc ';' >>= fun _ ->
   return Gt
 
+let letp : command parser =
+  sats "Let" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Let
+
+let askp : command parser =
+  sats "Ask" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Ask
+
 (* Parses a no argument command *)
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
-  catp <|> andp <|> orp <|> notp <|> eqp <|> ltep <|> ltp <|> gtep <|> gtp
+  catp <|> andp <|> orp <|> notp <|> eqp <|> ltep <|> ltp <|> gtep <|> gtp <|> letp
+  <|> askp
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
@@ -363,29 +391,41 @@ let string_of_const (inp : const) : string =
   |
     Unit -> "<unit>"
 
-
+(* Converts values to const *)
+let const_of_value (inp : value) : const =
+  match inp with
+    I_val i -> Int i
+  |
+    B_val b -> Bool b
+  |
+    S_val s -> String s
+  |
+    N_val n -> Name n
+  |
+    U_val -> Unit
 
 (* Evaluates a list of commands, using configuration
    (p/s) -> (p'/s') with p being a prog and s being a stack
    Throws defined error codes 0,1,2,3
    Returns an output list * error code
-   Only a Log command may change the output list *)
-let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list * int) =
+   Only a Log command may change the output list
+   m is a simple memory for the let and ask commands *)
+let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (string list * int)  =
   match prog with
-    (Push v)::prog' -> eval prog' (v::s) acc
+    (Push v)::prog' -> eval prog' (v::s) acc m
   |
     Pop::prog' -> begin
       match s with
         [] -> acc, 2
       |
-        v::s' -> eval prog' s' acc
+        v::s' -> eval prog' s' acc m
     end
   |
     Log::prog' -> begin
       match s with
         [] -> acc, 2
       |
-        v::s' -> eval prog' s' ((string_of_const v)::acc)
+        v::s' -> eval prog' s' ((string_of_const v)::acc) m
     end
   |
     Swap::prog' -> begin
@@ -394,7 +434,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v::[] -> acc, 2
       |
-        v1::v2::s' -> eval prog' (v2::v1::s') acc
+        v1::v2::s' -> eval prog' (v2::v1::s') acc m
     end
   |
     Add::prog' -> begin
@@ -405,7 +445,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x + y)::s') acc
+            (Int x, Int y) -> eval prog' (Int (x + y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -419,7 +459,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x - y)::s') acc
+            (Int x, Int y) -> eval prog' (Int (x - y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -433,7 +473,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x * y)::s') acc
+            (Int x, Int y) -> eval prog' (Int (x * y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -451,7 +491,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
               match y with
                 0 -> acc, 3
               |
-                _ -> eval prog' (Int (x / y)::s') acc
+                _ -> eval prog' (Int (x / y)::s') acc m
               end
           |
             _ -> acc, 1
@@ -470,7 +510,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
               match y with
                 0 -> acc, 3
               |
-                _ -> eval prog' (Int (x mod y)::s') acc
+                _ -> eval prog' (Int (x mod y)::s') acc m
             end
           |
             _ -> acc, 1
@@ -483,7 +523,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v::s' -> begin
           match v with
-            Int x -> eval prog' (Int (-1 * x)::s') acc
+            Int x -> eval prog' (Int (-1 * x)::s') acc m
           |
             _ -> acc, 1
           end
@@ -497,7 +537,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            String x, String y -> eval prog' (String (y ^ x)::s') acc
+            String x, String y -> eval prog' (String (y ^ x)::s') acc m
           |
             _ -> acc, 1
           end
@@ -511,7 +551,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            Bool x, Bool y -> eval prog' (Bool (x && y)::s') acc
+            Bool x, Bool y -> eval prog' (Bool (x && y)::s') acc m
           |
             _ -> acc, 1
           end
@@ -525,7 +565,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            Bool x, Bool y -> eval prog' (Bool (x || y)::s') acc
+            Bool x, Bool y -> eval prog' (Bool (x || y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -537,7 +577,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v::s' -> begin
           match v with
-            Bool x -> eval prog' (Bool (not x)::s') acc
+            Bool x -> eval prog' (Bool (not x)::s') acc m
           |
             _ -> acc, 1
         end
@@ -551,7 +591,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x = y)::s') acc
+            (Int x, Int y) -> eval prog' (Bool (x = y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -565,7 +605,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x <= y)::s') acc
+            (Int x, Int y) -> eval prog' (Bool (x <= y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -579,7 +619,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x < y)::s') acc
+            (Int x, Int y) -> eval prog' (Bool (x < y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -593,7 +633,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x >= y)::s') acc
+            (Int x, Int y) -> eval prog' (Bool (x >= y)::s') acc m
           |
             _ -> acc, 1
         end
@@ -607,13 +647,53 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x > y)::s') acc
+            (Int x, Int y) -> eval prog' (Bool (x > y)::s') acc m
           |
             _ -> acc, 1
         end
     end
   |
+    Let::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        v::[] -> acc, 2
+      |
+        v::n::s' -> begin
+          match (v, n) with
+            (Int i, Name n) -> eval prog' s' acc ((n, I_val i)::m)
+          |
+            (Bool b, Name n) -> eval prog' s' acc ((n, B_val b)::m)
+          |
+            (String s, Name n) -> eval prog' s' acc ((n, S_val s)::m)
+          |
+            (Unit, Name n) -> eval prog' s' acc ((n, U_val)::m)
+          |
+            _ -> acc, 1 (* If n is not a Name *)
+          end
+      end
+  |
+    Ask::prog' -> begin
+      match s with
+        [] -> acc, 2
+      |
+        n::s' -> begin
+          match n with
+            Name s -> begin
+              match fetch m s with
+                Some v -> eval prog' (const_of_value v::s') acc m
+              |
+                None -> acc, 4 (* Lookup failed: unbound variable *)
+              end
+          |
+            _ -> acc, 1
+          end
+      end
+  |
     [] -> acc, 0
+
+(* Debugging function *)
+let show_stack prog = let (revlog, stack) = eval prog [] [] [] in (List.rev revlog, stack)
 
 (* Wrapper for evaluate
    Takes a prog calls evaluate on it
@@ -622,11 +702,11 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) : (string list *
 let interpreter (s : string) : string list * int =
   match parse commandsp s with
     Some (commands, []) -> begin
-    match eval commands [] [] with
+    match eval commands [] [] [] with
         ls, err -> (List.rev ls), err
   end
   |
-    _ -> failwith "unimplemented"
+    _ -> failwith "Invalid string"
 
 let readlines (file : string) : string =
   let fp = open_in file in
