@@ -40,8 +40,9 @@ type command =
   | Gt
   | Let
   | Ask
+  | BeginEnd of (command list)
+
   (* The following commands will be enforced by parsers only:
-     Begin commands End
      If commands Else commands End*)
 
 (* Program type *)
@@ -83,6 +84,16 @@ let (>>=) : 'a parser -> ('a -> 'b parser) -> 'b parser =
     |
       Some (a, rest) -> f a rest
 
+(* Returns the results of both p1 and p2 *)
+let (+++) (p1 : 'a parser) (p2 : 'b parser) : ('a * 'b) parser =
+  fun ls ->
+  match p1 ls with
+  | Some (x, ls) ->
+    (match p2 ls with
+     | Some (y, ls) -> Some ((x, y), ls)
+     | None -> None)
+  | None -> None
+
 (* Does not consume the input string
    Returns c *)
 let return (a: 'a) : 'a parser =
@@ -123,6 +134,17 @@ let rec many1 (p : 'a parser) : ('a list) parser =
     end
   |
     None -> None
+
+(* Useful for mutually recursive parsers,
+   requires the parser to take in a unit *)
+let rec many' (p : unit -> 'a parser) : ('a list) parser =
+  fun ls ->
+  match p () ls with
+  | Some (x, ls) ->
+    (match many' p ls with
+     | Some (xs, ls) -> Some (x :: xs, ls)
+     | None -> Some (x :: [], ls))
+  | None -> Some ([], ls)
 
 (* Parses the first character of the input *)
 let charp : char parser =
@@ -360,6 +382,7 @@ let askp : command parser =
   satc ';' >>= fun _ ->
   return Ask
 
+
 (* Parses a no argument command *)
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
@@ -368,14 +391,23 @@ let noarg : command parser =
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
-let commandp : command parser =
-  (pushp <|> noarg) >>= fun x ->
+let rec commandp () : command parser =
+  (pushp <|> noarg <|> beginendp ()) >>= fun x ->
   wsp >>= fun _ ->
   return x
 
+and beginendp () : command parser =
+  sats "Begin" >>= fun _ ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun com ->
+  sats "End;" >>= fun _ ->
+  wsp >>= fun _ ->
+  return (BeginEnd (com))
+
 (* Parses a list of commands, ignoring whitespace *)
-let commandsp : prog parser =
-  many1 commandp
+let commandsp () : prog parser  =
+  many1 (commandp ())
+
 
 (* Converts const to string representations consistent with
    the output files *)
@@ -407,303 +439,331 @@ let const_of_value (inp : value) : const =
 (* Evaluates a list of commands, using configuration
    (p/s) -> (p'/s') with p being a prog and s being a stack
    Throws defined error codes 0,1,2,3
-   Returns an output list * error code
+   Returns an output list * error code * copy of stack for BeginEnd
    Only a Log command may change the output list
-   m is a simple memory for the let and ask commands *)
-let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (string list * int)  =
+   m is a simple memory for the let and ask commands
+   since begin end must push the top value of the inner stack to the outer one *)
+let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (string list * int * const list)  =
   match prog with
     (Push v)::prog' -> eval prog' (v::s) acc m
   |
     Pop::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
         v::s' -> eval prog' s' acc m
     end
   |
     Log::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
         v::s' -> eval prog' s' ((string_of_const v)::acc) m
     end
   |
     Swap::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> eval prog' (v2::v1::s') acc m
     end
   |
     Add::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Int (x + y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Sub::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Int (x - y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Mul::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Int (x * y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Div::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> begin
               match y with
-                0 -> acc, 3
+                0 -> acc, 3, s
               |
                 _ -> eval prog' (Int (x / y)::s') acc m
               end
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Rem::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> begin
               match y with
-                0 -> acc, 3
+                0 -> acc, 3, s
               |
                 _ -> eval prog' (Int (x mod y)::s') acc m
             end
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Neg::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
         v::s' -> begin
           match v with
             Int x -> eval prog' (Int (-1 * x)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
           end
     end
   |
     Cat::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             String x, String y -> eval prog' (String (y ^ x)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
           end
       end
   |
     And::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             Bool x, Bool y -> eval prog' (Bool (x && y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
           end
       end
   |
     Or::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             Bool x, Bool y -> eval prog' (Bool (x || y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Not::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
         v::s' -> begin
           match v with
             Bool x -> eval prog' (Bool (not x)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Eq::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Bool (x = y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Lte::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Bool (x <= y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Lt::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Bool (x < y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Gte::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Bool (x >= y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Gt::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
         v1::v2::s' -> begin
           match (v1, v2) with
             (Int x, Int y) -> eval prog' (Bool (x > y)::s') acc m
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
         end
     end
   |
     Let::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
-        v::[] -> acc, 2
+        v::[] -> acc, 2, s
       |
-        v::n::s' -> begin
-          match (v, n) with
-            (Int i, Name n) -> eval prog' s' acc ((n, I_val i)::m)
+        n::v::s' -> begin
+          match (n, v) with
+            (Name n, Int i) -> eval prog' s' acc ((n, I_val i)::m)
           |
-            (Bool b, Name n) -> eval prog' s' acc ((n, B_val b)::m)
+            (Name n, Bool b) -> eval prog' s' acc ((n, B_val b)::m)
           |
-            (String s, Name n) -> eval prog' s' acc ((n, S_val s)::m)
+            (Name n, String s) -> eval prog' s' acc ((n, S_val s)::m)
           |
-            (Unit, Name n) -> eval prog' s' acc ((n, U_val)::m)
+            (Name n, Unit) -> eval prog' s' acc ((n, U_val)::m)
           |
-            _ -> acc, 1 (* If n is not a Name *)
+            (Name n, Name n') -> eval prog' s' acc ((n, N_val n)::m)
+          |
+            _ -> acc, 1, s (* If n is not a Name *)
           end
       end
   |
     Ask::prog' -> begin
       match s with
-        [] -> acc, 2
+        [] -> acc, 2, s
       |
         n::s' -> begin
           match n with
-            Name s -> begin
-              match fetch m s with
+            Name str -> begin
+              match fetch m str with
                 Some v -> eval prog' (const_of_value v::s') acc m
               |
-                None -> acc, 4 (* Lookup failed: unbound variable *)
+                None -> acc, 4, s (* Lookup failed: unbound variable *)
               end
           |
-            _ -> acc, 1
+            _ -> acc, 1, s
           end
       end
   |
-    [] -> acc, 0
+    (BeginEnd comls)::prog' ->
 
-(* Debugging function *)
-let show_stack prog = let (revlog, stack) = eval prog [] [] [] in (List.rev revlog, stack)
+    (* BeginEnd must contain commands *)
+    if comls = [] then acc, 2, [] else begin
+      match eval comls [] [] m with
+
+      (* The stack may not be empty after evaluating comls, since the
+         top value of it must be pushed to the outer stack *)
+        (newacc, _, []) -> (newacc @ acc), 2, s
+      |
+
+      (* Successful return, push top value of inner stack to outer and concat output list *)
+        (newacc, 0, v::_) -> eval prog' (v::s) (newacc @ acc) m
+      |
+
+      (* Failed return, keep track of the output list but exit with code err *)
+        (newacc, err, s) -> (newacc @ acc), err, s
+    end
+  |
+    [] -> acc, 0, s
+
+(* Debugging functions *)
+let show_stack prog = let (revlog, err, scopy) = eval prog [] [] [] in (List.rev revlog, err, scopy)
+
+let debug s =
+  match parse (commandsp ()) s with
+   Some (prog, []) -> show_stack prog
+  |
+    _ -> failwith "Invalid"
 
 (* Wrapper for evaluate
    Takes a prog calls evaluate on it
    A successfully parsed program returns an empty list as the second member
    in the tuple *)
 let interpreter (s : string) : string list * int =
-  match parse commandsp s with
+  match parse (commandsp ()) s with
     Some (commands, []) -> begin
     match eval commands [] [] [] with
-        ls, err -> (List.rev ls), err
+        ls, err, _ -> (List.rev ls), err
   end
   |
     _ -> failwith "Invalid string"
@@ -721,4 +781,6 @@ let readlines (file : string) : string =
 
 let runfile (file : string) : string list * int =
   let s = readlines file in
-  interpreter s
+  interpreter s ;;
+
+parse (commandsp ()) "Begin Begin Push 5; End; Push 5; End;"
