@@ -40,10 +40,8 @@ type command =
   | Gt
   | Let
   | Ask
-  | BeginEnd of (command list)
-
-  (* The following commands will be enforced by parsers only:
-     If commands Else commands End*)
+  | BeginEnd of command list
+  | IfElseEnd of (command list * command list) (* The first element is the true block, second is false*)
 
 (* Program type *)
 type prog =
@@ -392,17 +390,28 @@ let noarg : command parser =
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
 let rec commandp () : command parser =
-  (pushp <|> noarg <|> beginendp ()) >>= fun x ->
+  (pushp <|> noarg <|> beginendp () <|> ifelseendp ()) >>= fun x ->
   wsp >>= fun _ ->
   return x
 
 and beginendp () : command parser =
   sats "Begin" >>= fun _ ->
   wsp >>= fun _ ->
-  many' (fun () -> commandp ()) >>= fun com ->
+  many' (fun () -> commandp ()) >>= fun coms ->
   sats "End;" >>= fun _ ->
   wsp >>= fun _ ->
-  return (BeginEnd (com))
+  return (BeginEnd (coms))
+
+and ifelseendp () : command parser =
+  sats "If" >>= fun _ ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun truecoms ->
+  sats "Else" >>= fun _ ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun falsecoms ->
+  sats "End;" >>= fun _ ->
+  wsp >>= fun _ ->
+  return (IfElseEnd (truecoms, falsecoms))
 
 (* Parses a list of commands, ignoring whitespace *)
 let commandsp () : prog parser  =
@@ -728,7 +737,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
     (BeginEnd comls)::prog' ->
 
     (* BeginEnd must contain commands *)
-    if comls = [] then acc, 2, [] else begin
+    if comls = [] then acc, 2, s else begin
       match eval comls [] [] m with
 
       (* The stack may not be empty after evaluating comls, since the
@@ -742,6 +751,37 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
 
       (* Failed return, keep track of the output list but exit with code err *)
         (newacc, err, s) -> (newacc @ acc), err, s
+    end
+  |
+    IfElseEnd (truecoms, falsecoms)::prog' ->
+      if truecoms = [] || falsecoms = [] then acc, 2, s else begin
+      match s with
+        [] -> acc, 2, s
+      |
+        v::s' -> begin
+          match v with
+            Bool true -> begin
+              match eval truecoms s' acc m with
+
+              (* Successful return, continue evaluation *)
+                (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
+              |
+
+              (* Failed return, exit with code err *)
+                (newacc, err, s'') -> (newacc @ acc), err, s''
+              end
+          |
+            Bool false -> begin
+              match eval falsecoms s' acc m with
+
+              (* Same logic as above, but evaluating the false block *)
+                (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
+              |
+                (newacc, err, s'') -> (newacc @ acc), err, s''
+              end
+          |
+            _ -> acc, 1, s (* Not a boolean, exit*)
+          end
     end
   |
     [] -> acc, 0, s
@@ -783,4 +823,3 @@ let runfile (file : string) : string list * int =
   let s = readlines file in
   interpreter s ;;
 
-parse (commandsp ()) "Begin Begin Push 5; End; Push 5; End;"
