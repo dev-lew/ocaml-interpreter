@@ -579,7 +579,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            String x, String y -> eval prog' (String (y ^ x)::s') acc m
+            String x, String y -> eval prog' (String (x ^ y)::s') acc m
           |
             _ -> acc, 1, s
           end
@@ -711,7 +711,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
           |
             (Name n, Unit) -> eval prog' s' acc ((n, U_val)::m)
           |
-            (Name n, Name n') -> eval prog' s' acc ((n, N_val n)::m)
+            (Name n, Name n') -> eval prog' s' acc ((n, N_val n')::m)
           |
             _ -> acc, 1, s (* If n is not a Name *)
           end
@@ -761,7 +761,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
         v::s' -> begin
           match v with
             Bool true -> begin
-              match eval truecoms s' acc m with
+              match eval truecoms s' [] m with
 
               (* Successful return, continue evaluation *)
                 (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
@@ -772,7 +772,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
               end
           |
             Bool false -> begin
-              match eval falsecoms s' acc m with
+              match eval falsecoms s' [] m with
 
               (* Same logic as above, but evaluating the false block *)
                 (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
