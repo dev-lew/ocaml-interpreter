@@ -41,7 +41,11 @@ type command =
   | Let
   | Ask
   | BeginEnd of command list
-  | IfElseEnd of (command list * command list) (* The first element is the true block, second is false*)
+  | IfElseEnd of (command list * command list) (* true block, false block *)
+  | DefFun of (const * const * command list) (* function name, arg, commands *)
+  | Call
+  | Throw
+  | TryCatchEnd of (command list * command list) (* try block, catch block *)
 
 (* Program type *)
 type prog =
@@ -53,11 +57,41 @@ type value =
   | B_val of bool
   | S_val of string
   | N_val of string
+  | F_val of ((string * value) list * const * const * command list) (* mem, name, name, coms *)
   | U_val
 
 (* Simple key value based memory for Let *)
 type mem =
   (string * value) list
+
+(* Converts values to string representations consistent with
+   the output files *)
+let string_of_value (inp : value) : string =
+  match inp with
+    I_val i -> string_of_int i
+  |
+    B_val b -> "<" ^ string_of_bool b ^ ">"
+  |
+    S_val s -> "\"" ^ s ^ "\""
+  |
+    N_val n -> n
+  |
+    F_val _ -> "<fun>"
+  |
+    U_val -> "<unit>"
+
+(* Converts consts to values  *)
+let value_of_const (inp: const) : value =
+  match inp with
+    Int i -> I_val i
+  |
+    Bool b -> B_val b
+  |
+    String s -> S_val s
+  |
+    Name n -> N_val n
+  |
+    Unit -> U_val
 
 (* Retrieve a value by searching with key name *)
 let fetch (m : mem) (name : string) : value option =
@@ -380,17 +414,22 @@ let askp : command parser =
   satc ';' >>= fun _ ->
   return Ask
 
+let callp : command parser =
+  sats "Call" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Call
+
 
 (* Parses a no argument command *)
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
   catp <|> andp <|> orp <|> notp <|> eqp <|> ltep <|> ltp <|> gtep <|> gtp <|> letp
-  <|> askp
+  <|> askp <|> callp
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
 let rec commandp () : command parser =
-  (pushp <|> noarg <|> beginendp () <|> ifelseendp ()) >>= fun x ->
+  (pushp <|> noarg <|> beginendp () <|> ifelseendp () <|> deffunp ()) >>= fun x ->
   wsp >>= fun _ ->
   return x
 
@@ -413,37 +452,23 @@ and ifelseendp () : command parser =
   wsp >>= fun _ ->
   return (IfElseEnd (truecoms, falsecoms))
 
+and deffunp () : command parser =
+  sats "DefFun" >>= fun _ ->
+  wsp >>= fun _ ->
+  namep >>= fun funcname ->
+  wsp >>= fun _ ->
+  namep >>= fun arg ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun coms ->
+  sats "End;" >>= fun _ ->
+  wsp >>= fun _ ->
+  return (DefFun (funcname, arg, coms))
+
+
 (* Parses a list of commands, ignoring whitespace *)
 let commandsp () : prog parser  =
   many1 (commandp ())
 
-
-(* Converts const to string representations consistent with
-   the output files *)
-let string_of_const (inp : const) : string =
-  match inp with
-    Int i -> string_of_int i
-  |
-    Bool b -> "<" ^ string_of_bool b ^ ">"
-  |
-    String s -> "\"" ^ s ^ "\""
-  |
-    Name n -> n
-  |
-    Unit -> "<unit>"
-
-(* Converts values to const *)
-let const_of_value (inp : value) : const =
-  match inp with
-    I_val i -> Int i
-  |
-    B_val b -> Bool b
-  |
-    S_val s -> String s
-  |
-    N_val n -> Name n
-  |
-    U_val -> Unit
 
 (* Evaluates a list of commands, using configuration
    (p/s) -> (p'/s') with p being a prog and s being a stack
@@ -452,9 +477,9 @@ let const_of_value (inp : value) : const =
    Only a Log command may change the output list
    m is a simple memory for the let and ask commands
    since begin end must push the top value of the inner stack to the outer one *)
-let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (string list * int * const list)  =
+let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (string list * int * value list)  =
   match prog with
-    (Push v)::prog' -> eval prog' (v::s) acc m
+    (Push v)::prog' -> eval prog' (value_of_const v::s) acc m
   |
     Pop::prog' -> begin
       match s with
@@ -467,7 +492,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       match s with
         [] -> acc, 2, s
       |
-        v::s' -> eval prog' s' ((string_of_const v)::acc) m
+        v::s' -> eval prog' s' ((string_of_value v)::acc) m
     end
   |
     Swap::prog' -> begin
@@ -487,7 +512,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x + y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (I_val (x + y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -501,7 +526,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x - y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (I_val (x - y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -515,7 +540,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Int (x * y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (I_val (x * y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -529,11 +554,11 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> begin
+            (I_val x, I_val y) -> begin
               match y with
                 0 -> acc, 3, s
               |
-                _ -> eval prog' (Int (x / y)::s') acc m
+                _ -> eval prog' (I_val (x / y)::s') acc m
               end
           |
             _ -> acc, 1, s
@@ -548,11 +573,11 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> begin
+            (I_val x, I_val y) -> begin
               match y with
                 0 -> acc, 3, s
               |
-                _ -> eval prog' (Int (x mod y)::s') acc m
+                _ -> eval prog' (I_val (x mod y)::s') acc m
             end
           |
             _ -> acc, 1, s
@@ -565,7 +590,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v::s' -> begin
           match v with
-            Int x -> eval prog' (Int (-1 * x)::s') acc m
+            I_val x -> eval prog' (I_val (-1 * x)::s') acc m
           |
             _ -> acc, 1, s
           end
@@ -579,7 +604,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            String x, String y -> eval prog' (String (x ^ y)::s') acc m
+            S_val x, S_val y -> eval prog' (S_val (x ^ y)::s') acc m
           |
             _ -> acc, 1, s
           end
@@ -593,7 +618,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            Bool x, Bool y -> eval prog' (Bool (x && y)::s') acc m
+            B_val x, B_val y -> eval prog' (B_val (x && y)::s') acc m
           |
             _ -> acc, 1, s
           end
@@ -607,7 +632,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            Bool x, Bool y -> eval prog' (Bool (x || y)::s') acc m
+            B_val x, B_val y -> eval prog' (B_val (x || y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -619,7 +644,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v::s' -> begin
           match v with
-            Bool x -> eval prog' (Bool (not x)::s') acc m
+            B_val x -> eval prog' (B_val (not x)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -633,7 +658,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x = y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (B_val (x = y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -647,7 +672,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x <= y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (B_val (x <= y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -661,7 +686,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x < y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (B_val (x < y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -675,7 +700,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x >= y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (B_val (x >= y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -689,7 +714,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v1::v2::s' -> begin
           match (v1, v2) with
-            (Int x, Int y) -> eval prog' (Bool (x > y)::s') acc m
+            (I_val x, I_val y) -> eval prog' (B_val (x > y)::s') acc m
           |
             _ -> acc, 1, s
         end
@@ -703,15 +728,15 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         n::v::s' -> begin
           match (n, v) with
-            (Name n, Int i) -> eval prog' s' acc ((n, I_val i)::m)
+            (N_val n, I_val i) -> eval prog' s' acc ((n, I_val i)::m)
           |
-            (Name n, Bool b) -> eval prog' s' acc ((n, B_val b)::m)
+            (N_val n, B_val b) -> eval prog' s' acc ((n, B_val b)::m)
           |
-            (Name n, String s) -> eval prog' s' acc ((n, S_val s)::m)
+            (N_val n, S_val s) -> eval prog' s' acc ((n, S_val s)::m)
           |
-            (Name n, Unit) -> eval prog' s' acc ((n, U_val)::m)
+            (N_val n, U_val) -> eval prog' s' acc ((n, U_val)::m)
           |
-            (Name n, Name n') -> eval prog' s' acc ((n, N_val n')::m)
+            (N_val n, N_val n') -> eval prog' s' acc ((n, N_val n')::m)
           |
             _ -> acc, 1, s (* If n is not a Name *)
           end
@@ -723,9 +748,9 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         n::s' -> begin
           match n with
-            Name str -> begin
+            N_val str -> begin
               match fetch m str with
-                Some v -> eval prog' (const_of_value v::s') acc m
+                Some v -> eval prog' (v::s') acc m
               |
                 None -> acc, 4, s (* Lookup failed: unbound variable *)
               end
@@ -760,7 +785,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
       |
         v::s' -> begin
           match v with
-            Bool true -> begin
+            B_val true -> begin
               match eval truecoms s' [] m with
 
               (* Successful return, continue evaluation *)
@@ -771,7 +796,7 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
                 (newacc, err, s'') -> (newacc @ acc), err, s''
               end
           |
-            Bool false -> begin
+            B_val false -> begin
               match eval falsecoms s' [] m with
 
               (* Same logic as above, but evaluating the false block *)
@@ -782,6 +807,38 @@ let rec eval (prog : prog) (s : const list ) (acc: string list) (m : mem) : (str
           |
             _ -> acc, 1, s (* Not a boolean, exit*)
           end
+    end
+  |
+    DefFun (fname, arg, coms)::prog' ->begin
+      match fname with
+        Name n -> eval prog' s acc ((n, F_val (m, fname, arg, coms))::m)
+      |
+        _ -> failwith "Not a name"
+      end
+  |
+    (* Consume an argument value and the closure function
+       represented by F_val, execute the commands in F_val, and push the top of the inner
+       stack to the outer stack
+       Binds the argument value to the name of the argument defined during DefFun
+       along and bindings the function to its name again to allow recursion *)
+    Call::prog' -> begin
+      match s with
+        [] -> acc, 2, s
+      |
+        _::[] -> acc, 2, s
+
+      |
+        arg_val::f::s' -> begin
+          match f with
+            F_val (env, Name fname, Name arg, coms) -> begin
+              match eval coms [] [] ((arg, arg_val)::((fname, f)::env)) with
+                (newacc, 0, v::_) -> eval prog' (v::s') (newacc @ acc) m
+              |
+                (newacc, err, s'') -> (newacc @ acc), err, s''
+              end
+          |
+            _ -> acc, 4, s' (* Wrong type *)
+        end
     end
   |
     [] -> acc, 0, s
