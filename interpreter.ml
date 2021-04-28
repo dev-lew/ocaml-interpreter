@@ -419,12 +419,16 @@ let callp : command parser =
   satc ';' >>= fun _ ->
   return Call
 
+let throwp : command parser =
+  sats "Throw" >>= fun _ ->
+  satc ';' >>= fun _ ->
+  return Throw
 
 (* Parses a no argument command *)
 let noarg : command parser =
   popp <|> logp <|> swapp <|> addp <|> subp <|> mulp <|> divp <|> remp <|> negp <|>
   catp <|> andp <|> orp <|> notp <|> eqp <|> ltep <|> ltp <|> gtep <|> gtp <|> letp
-  <|> askp <|> callp
+  <|> askp <|> callp <|> throwp
 
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
@@ -837,9 +841,21 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
                 (newacc, err, s'') -> (newacc @ acc), err, s''
               end
           |
-            _ -> acc, 4, s' (* Wrong type *)
+            _ -> acc, 4, s (* Wrong type *)
         end
     end
+  |
+    Throw::prog' -> begin
+      match s with
+        [] -> acc, 2, s
+      |
+        v::s' -> begin
+          match v with
+            I_val i -> acc, i, s (* Throw user-defined error code i *)
+          |
+            _ -> acc, 1, s
+          end
+      end
   |
     [] -> acc, 0, s
 
