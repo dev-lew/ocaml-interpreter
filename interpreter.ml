@@ -433,7 +433,7 @@ let noarg : command parser =
 (* Parses a command and ignores whitespace after
    the semicolon (helps with parsing lists of commands) *)
 let rec commandp () : command parser =
-  (pushp <|> noarg <|> beginendp () <|> ifelseendp () <|> deffunp ()) >>= fun x ->
+  (pushp <|> noarg <|> beginendp () <|> ifelseendp () <|> deffunp () <|> trycatchendp ()) >>= fun x ->
   wsp >>= fun _ ->
   return x
 
@@ -468,6 +468,16 @@ and deffunp () : command parser =
   wsp >>= fun _ ->
   return (DefFun (funcname, arg, coms))
 
+and trycatchendp () : command parser =
+  sats "Try" >>= fun _ ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun trycoms ->
+  sats "Catch" >>= fun _ ->
+  wsp >>= fun _ ->
+  many' (fun () -> commandp ()) >>= fun catchcoms ->
+  sats "End;" >>= fun _ ->
+  wsp >>= fun _ ->
+  return (TryCatchEnd (trycoms, catchcoms))
 
 (* Parses a list of commands, ignoring whitespace *)
 let commandsp () : prog parser  =
@@ -851,10 +861,26 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
       |
         v::s' -> begin
           match v with
-            I_val i -> acc, i, s (* Throw user-defined error code i *)
+            I_val i -> acc, i, s (* Throw user-defined error code i *) 
           |
             _ -> acc, 1, s
           end
+      end
+  |
+    TryCatchEnd (trycoms, catchcoms)::prog' -> begin
+      match eval trycoms s [] m with
+        (newacc, 0, s') -> eval prog'  s' (newacc @ acc) m
+      |
+        (* An error was thrown, evaluate the catch block within the
+           original env and stack with the error code at the top *)
+        (newacc, err, s') -> begin
+          match eval catchcoms (I_val err::s) [] m with
+
+            (* Catch block is finished, continue rest of evaluation *)
+            (newacc', 0, s') -> eval prog' s' (newacc' @ newacc) m
+          |
+            (newacc', err, s') -> (newacc' @ newacc), err, s
+        end
       end
   |
     [] -> acc, 0, s
