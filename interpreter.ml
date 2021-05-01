@@ -752,6 +752,8 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
           |
             (N_val n, N_val n') -> eval prog' s' acc ((n, N_val n')::m)
           |
+            (N_val n, F_val f) -> eval prog' s' acc ((n, F_val f)::m)
+          |
             _ -> acc, 1, s (* If n is not a Name *)
           end
       end
@@ -799,25 +801,9 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
       |
         v::s' -> begin
           match v with
-            B_val true -> begin
-              match eval truecoms s' [] m with
-
-              (* Successful return, continue evaluation *)
-                (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
-              |
-
-              (* Failed return, exit with code err *)
-                (newacc, err, s'') -> (newacc @ acc), err, s''
-              end
+            B_val true -> eval (truecoms @ prog') s' acc m
           |
-            B_val false -> begin
-              match eval falsecoms s' [] m with
-
-              (* Same logic as above, but evaluating the false block *)
-                (newacc, 0, s'') -> eval prog' s'' (newacc @ acc) m
-              |
-                (newacc, err, s'') -> (newacc @ acc), err, s''
-              end
+            B_val false -> eval (falsecoms @ prog') s' acc m
           |
             _ -> acc, 1, s (* Not a boolean, exit*)
           end
@@ -845,7 +831,7 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
         arg_val::f::s' -> begin
           match f with
             F_val (env, Name fname, Name arg, coms) -> begin
-              match eval coms [] [] ((arg, arg_val)::((fname, f)::env)) with
+              match eval coms [] [] (((arg, arg_val)::((fname, f)::env))) with
                 (newacc, 0, v::_) -> eval prog' (v::s') (newacc @ acc) m
               |
                 (newacc, err, s'') -> (newacc @ acc), err, s''
@@ -868,8 +854,8 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
       end
   |
     TryCatchEnd (trycoms, catchcoms)::prog' -> begin
-      match eval trycoms s [] m with
-        (newacc, 0, s') -> eval prog'  s' (newacc @ acc) m
+      match eval trycoms [] [] m with
+        (newacc, 0, s') -> eval prog' (s' @ s) (newacc @ acc) m
       |
         (* An error was thrown, evaluate the catch block within the
            original env and stack with the error code at the top *)
@@ -877,9 +863,9 @@ let rec eval (prog : prog) (s : value list ) (acc: string list) (m : mem) : (str
           match eval catchcoms (I_val err::s) [] m with
 
             (* Catch block is finished, continue rest of evaluation *)
-            (newacc', 0, s') -> eval prog' s' (newacc' @ newacc) m
+            (newacc', 0, s'') -> eval prog' s'' (newacc' @ newacc @ acc) m
           |
-            (newacc', err, s') -> (newacc' @ newacc), err, s
+            (newacc', err, s'') -> (newacc' @ newacc @ acc), err, s''
         end
       end
   |
