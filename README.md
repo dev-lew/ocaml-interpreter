@@ -1,6 +1,6 @@
 # ocaml-interpreter
 Credit to the CS320 course staff for the grammar design!
-**Do not cheat. If you can find this code, so can your professors and classmates**
+
 
 Supports the following grammar (in extended BNF):
 
